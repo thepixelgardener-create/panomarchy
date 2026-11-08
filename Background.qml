@@ -169,6 +169,7 @@ Item {
     } else {
       next.screens = {}
       delete next.scene
+      delete next.wallpapers
     }
     config = next
     persistConfig()
@@ -241,6 +242,94 @@ Item {
     if (!(mainMm > 0 && screenMm > 0)) return 1
     var factor = mainMm / screenMm
     return factor > 0.25 && factor < 4 ? factor : 1
+  }
+
+  // Wallpapers without panels, each with settings of its own, kept by file
+  // name so they hold across theme switches:
+  //   "wallpapers": { "<file>": { "mode": "fill" | "span",
+  //                               "scene": { "x": 0, "y": 0, "scale": 1 } } }
+  // fill, the default, shows the whole wallpaper on every screen, moved and
+  // sized alike on each; span shows one picture across all screens, sized
+  // like a scene with panels. "plain": "span" makes span the default.
+  function wallpaperKey(path) {
+    var real = spanSource(path)
+    if (!real || real.indexOf(transitionCache) === 0) return ""
+    return real.substring(real.lastIndexOf("/") + 1)
+  }
+
+  function plainEntry(path) {
+    var key = wallpaperKey(path)
+    var all = config.wallpapers
+    var entry = key && all && typeof all === "object" ? all[key] : null
+    return entry && typeof entry === "object" ? entry : {}
+  }
+
+  function plainMode(path) {
+    var mode = plainEntry(path).mode
+    if (mode === "span" || mode === "fill") return mode
+    return config.plain === "span" ? "span" : "fill"
+  }
+
+  function plainScene(path) {
+    var scene = plainEntry(path).scene
+    return scene && typeof scene === "object" ? scene : {}
+  }
+
+  function savePlain(path, mode, sceneValues, deferWrite) {
+    var key = wallpaperKey(path)
+    if (!key) return
+    var next = JSON.parse(JSON.stringify(config))
+    if (!next.wallpapers || typeof next.wallpapers !== "object") next.wallpapers = {}
+    var entry = next.wallpapers[key] && typeof next.wallpapers[key] === "object" ? next.wallpapers[key] : {}
+    if (mode !== undefined) {
+      if (mode === "auto") delete entry.mode
+      else entry.mode = mode
+    }
+    if (sceneValues) {
+      var scene = entry.scene && typeof entry.scene === "object" ? entry.scene : {}
+      for (var k in sceneValues) {
+        if (sceneValues[k] === undefined) delete scene[k]
+        else scene[k] = sceneValues[k]
+      }
+      if (Object.keys(scene).length) entry.scene = scene
+      else delete entry.scene
+    }
+    if (Object.keys(entry).length) next.wallpapers[key] = entry
+    else delete next.wallpapers[key]
+    if (!Object.keys(next.wallpapers).length) delete next.wallpapers
+    config = next
+    if (!deferWrite) persistConfig()
+  }
+
+  // Every screen together, in global logical pixels.
+  function screensBounds() {
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      var s = Quickshell.screens[i]
+      minX = Math.min(minX, s.x); minY = Math.min(minY, s.y)
+      maxX = Math.max(maxX, s.x + s.width); maxY = Math.max(maxY, s.y + s.height)
+    }
+    return isFinite(minX) ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : { x: 0, y: 0, w: 1, h: 1 }
+  }
+
+  // What a plain wallpaper's scene setting pivots on: the middle of all
+  // screens when it spans them, the main screen's centre when it fills each.
+  function plainAnchor(path) {
+    if (plainMode(path) !== "span") return sceneAnchor()
+    var b = screensBounds()
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2 }
+  }
+
+  // A plain wallpaper's picture in global logical pixels: across all screens
+  // when it spans them, on the main screen when it fills each.
+  function plainSceneRect(path) {
+    var native = nativeSizes[path]
+    var main = mainScreen
+    if (native === undefined || !main) return null
+    var area = plainMode(path) === "span" ? screensBounds() : { x: main.x, y: main.y, w: main.width, h: main.height }
+    var cover = coverRect(native, area.w, area.h)
+    return transformed({ x: area.x + cover.x, y: area.y + cover.y, w: cover.w, h: cover.h },
+                       plainAnchor(path), transformOf(plainScene(path)))
   }
 
   // The middle of the edge a screen shares with the main screen, in the
@@ -932,6 +1021,15 @@ Item {
       return "ok"
     }
 
+    // omarchy-shell background setWallpaperMode <fill|span|auto>: how the
+    // wallpaper on screen is shown when it has no panels.
+    function setWallpaperMode(mode: string): string {
+      if (["fill", "span", "auto"].indexOf(mode) === -1) return "use fill, span or auto"
+      if (root.isSpan(root.displayedBackground) === true) return "this wallpaper has panels and always spans"
+      root.savePlain(root.displayedBackground, mode, null, false)
+      return "ok"
+    }
+
     // omarchy-shell background setAutoscale <on|off>
     function setAutoscale(value: string): string {
       if (value !== "on" && value !== "off") return "use on or off"
@@ -1082,9 +1180,34 @@ Item {
         if (!spanned) {
           var plainSize = root.nativeSizes[path]
           if (plainSize === undefined) return null
-          var plain = root.coverRect(plainSize, width, height)
-          return { file: path, x: plain.x, y: plain.y, w: plain.w, h: plain.h, covers: true, aligned: false,
-                   how: "plain " + Math.round(plain.w) + "x" + Math.round(plain.h) + " at " + Math.round(plain.x) + "," + Math.round(plain.y) }
+          var plain
+          var plainAligned = false
+          var plainHow
+          if (root.plainMode(path) === "span") {
+            // One picture across all screens, then this screen's corrections:
+            // about its centre on the main screen, with autoscale about the
+            // seam on the others, as for a scene with panels.
+            var spanRect = root.plainSceneRect(path)
+            var local = { x: spanRect.x - modelData.x, y: spanRect.y - modelData.y, w: spanRect.w, h: spanRect.h }
+            var mine = root.transformOf(root.screenConfig(modelData.name))
+            if (role === "main") {
+              plain = root.transformed(local, { x: width / 2, y: height / 2 }, mine)
+            } else {
+              plain = root.transformed(local, root.seamAnchor(modelData),
+                                       { scale: root.autoScaleFor(modelData) * mine.scale, x: mine.x, y: mine.y })
+              plainAligned = true
+            }
+            plainHow = "span"
+          } else {
+            // The whole wallpaper on this screen, moved and sized like every other.
+            plain = root.transformed(root.coverRect(plainSize, width, height), { x: width / 2, y: height / 2 },
+                                     root.transformOf(root.plainScene(path)))
+            plainHow = "fill"
+          }
+          var plainCovers = plain.x <= 0.5 && plain.y <= 0.5 && plain.x + plain.w >= width - 0.5 && plain.y + plain.h >= height - 0.5
+          return { file: path, x: plain.x, y: plain.y, w: plain.w, h: plain.h, covers: plainCovers, aligned: plainAligned,
+                   how: plainHow + " " + Math.round(plain.w) + "x" + Math.round(plain.h) + " at " + Math.round(plain.x) + "," + Math.round(plain.y)
+                        + (plainCovers ? "" : ", gaps filled") }
         }
         var file = path
         if (role === "left" || role === "right") {

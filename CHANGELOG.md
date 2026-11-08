@@ -9,5 +9,6 @@
 - The whole scene has its own move and size (`scene` in the settings, `setScene`), which the side screens follow; a screen's own size pivots on the seam it shares with the main screen.
 - A bar icon, three screens sharing one horizon, opens the editor.
 - Autoscale, on by default, sizes the panels by each monitor's physical size from Hyprland, so a scene is as large on every screen as on the main one.
+- Wallpapers without panels either fill each screen or span across all of them, chosen per wallpaper, and each keeps its own framing.
 - `omarchy-shell background screens`, `spans` and `spanState` report what each screen does; `setAutoscale on|off` switches autoscaling.
 - A wallpaper or panel replaced at the same path is read again rather than served from Qt's image cache.

@@ -37,9 +37,14 @@ Item {
   property bool gesturing: false
 
   readonly property string pluginId: "thepixelgardener.panomarchy"
-  // Whether the wallpaper on screen has panels; only then is there a scene
-  // to adjust. A plain wallpaper fills every screen as Omarchy shows it.
-  readonly property bool spanned: !!service && service.isSpan(service.displayedBackground) === true
+  readonly property string wallpaper: service ? service.displayedBackground : ""
+  // Whether the wallpaper on screen has panels. A plain one either fills
+  // every screen or spans them, as chosen for it; One screen only applies
+  // when the picture spans the screens.
+  readonly property bool hasPanels: !!service && service.isSpan(wallpaper) === true
+  readonly property string plainMode: service && !hasPanels ? service.plainMode(wallpaper) : ""
+  readonly property bool spans: hasPanels || plainMode === "span"
+  onSpansChanged: if (!spans) mode = "scene"
   readonly property string mainName: service && service.mainScreen ? service.mainScreen.name : ""
   readonly property color accent: Commons.Color.accent
   readonly property color fg: Commons.Color.foreground
@@ -93,34 +98,45 @@ Item {
   // The target being adjusted: the whole scene or the selected screen.
   // Its move and size, the point its size pivots on and its box are all in
   // global logical pixels, the coordinates Hyprland lays monitors out in.
+  function sceneSettings() {
+    if (!service) return {}
+    return hasPanels ? service.sceneConfig() : service.plainScene(wallpaper)
+  }
+
   function targetTransform() {
     if (!service) return { scale: 1, x: 0, y: 0 }
-    return service.transformOf(mode === "scene" ? service.sceneConfig() : service.screenConfig(selected))
+    return service.transformOf(mode === "scene" ? sceneSettings() : service.screenConfig(selected))
   }
 
   function targetAnchor() {
     if (!service) return { x: 0, y: 0 }
-    return mode === "scene" ? service.sceneAnchor() : service.screenAnchor(selected)
+    if (mode === "screen") return service.screenAnchor(selected)
+    return hasPanels ? service.sceneAnchor() : service.plainAnchor(wallpaper)
   }
 
   function targetBox() {
-    if (!service || !spanned) return null
-    if (mode === "scene") return service.mainWallpaperRect(service.displayedBackground)
+    if (!service || !wallpaper) return null
+    if (mode === "scene") return hasPanels ? service.mainWallpaperRect(wallpaper) : service.plainSceneRect(wallpaper)
     var screen = screenByName(selected)
     var view = service.screenView(selected)
     return screen && view ? { x: screen.x + view.x, y: screen.y + view.y, w: view.w, h: view.h } : null
   }
 
   function applyTransform(t, deferWrite) {
-    if (!service || !spanned) return
+    if (!service || !wallpaper) return
     var scale = Math.round(Math.max(0.2, Math.min(5, t.scale)) * 1000) / 1000
     var clean = {
       x: Math.round(t.x) === 0 ? undefined : Math.round(t.x),
       y: Math.round(t.y) === 0 ? undefined : Math.round(t.y),
       scale: scale === 1 ? undefined : scale
     }
-    if (mode === "scene") service.saveScene(clean, deferWrite)
-    else if (selected) service.saveScreenSettings(selected, clean, deferWrite)
+    if (mode === "screen") {
+      if (selected) service.saveScreenSettings(selected, clean, deferWrite)
+    } else if (hasPanels) {
+      service.saveScene(clean, deferWrite)
+    } else {
+      service.savePlain(wallpaper, undefined, clean, deferWrite)
+    }
     if (deferWrite) dirty = true
   }
 
@@ -152,11 +168,17 @@ Item {
   function resetTarget() {
     if (!service) return
     var neutral = { x: undefined, y: undefined, scale: undefined }
-    if (mode === "scene") service.saveScene(neutral, false)
-    else if (selected) service.saveScreenSettings(selected, neutral, false)
+    if (mode === "screen") {
+      if (selected) service.saveScreenSettings(selected, neutral, false)
+    } else if (hasPanels) {
+      service.saveScene(neutral, false)
+    } else {
+      service.savePlain(wallpaper, undefined, neutral, false)
+    }
   }
 
   function selectScreen(name) {
+    if (!spans) return
     mode = "screen"
     selected = name
   }
@@ -211,8 +233,8 @@ Item {
         else if (event.key === Qt.Key_Down) root.nudge(0, step)
         else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) root.zoomCentre(step === 10 ? 1.1 : 1.01)
         else if (event.key === Qt.Key_Minus) root.zoomCentre(step === 10 ? 1 / 1.1 : 1 / 1.01)
-        else if (event.key === Qt.Key_Tab) root.cycleScreen(1)
-        else if (event.key === Qt.Key_Backtab) root.cycleScreen(-1)
+        else if (event.key === Qt.Key_Tab && root.spans) root.cycleScreen(1)
+        else if (event.key === Qt.Key_Backtab && root.spans) root.cycleScreen(-1)
         else if (event.key === Qt.Key_S) root.mode = "scene"
         else if (event.key === Qt.Key_0) root.resetTarget()
         else return
@@ -430,7 +452,7 @@ Item {
           MouseArea {
             id: mover
             anchors.fill: parent
-            enabled: root.spanned
+            enabled: !!root.wallpaper
             acceptedButtons: Qt.LeftButton
             cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
             property var start: null
@@ -546,20 +568,19 @@ Item {
           spacing: Style.space(12)
 
           readonly property var screenObj: root.screenByName(root.selected)
-          readonly property var t: root.service ? root.service.transformOf(root.mode === "scene" ? root.service.sceneConfig() : root.service.screenConfig(root.selected)) : ({ scale: 1, x: 0, y: 0 })
+          readonly property var t: root.service ? root.service.transformOf(root.mode === "scene" ? root.sceneSettings() : root.service.screenConfig(root.selected)) : ({ scale: 1, x: 0, y: 0 })
 
-          Text {
-            visible: !root.spanned
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "This wallpaper has no panels, so every screen shows it as Omarchy does. Your adjustments are kept for wallpapers that span the screens, such as Gargantuan's."
-            color: root.accent
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body * 0.9
+          SectionLabel { visible: !root.hasPanels; text: "This wallpaper" }
+          ButtonGroup {
+            visible: !root.hasPanels
+            options: [{ value: "fill", label: "Fill each screen" }, { value: "span", label: "Span across" }]
+            value: root.plainMode || "fill"
+            onChanged: function(value) { if (root.service) root.service.savePlain(root.wallpaper, value, null, false) }
           }
 
-          SectionLabel { text: "Adjust" }
+          SectionLabel { visible: root.spans; text: "Adjust" }
           ButtonGroup {
+            visible: root.spans
             options: [{ value: "scene", label: "Whole scene" }, { value: "screen", label: "One screen" }]
             value: root.mode
             onChanged: function(value) {
@@ -573,7 +594,9 @@ Item {
             visible: root.mode === "scene"
             width: parent.width
             wrapMode: Text.Wrap
-            text: "The picture across every screen. The side screens follow the main one."
+            text: root.hasPanels ? "The picture across every screen. The side screens follow the main one."
+                : root.spans ? "One picture across all your screens, kept for this wallpaper."
+                : "The whole wallpaper on every screen, moved and sized alike, kept for this wallpaper."
             color: root.fgDim
             font.family: Style.font.family
             font.pixelSize: Style.font.body * 0.9
@@ -622,7 +645,7 @@ Item {
             }
           }
 
-          SectionLabel { text: root.mode === "scene" ? "Whole scene" : "This screen" }
+          SectionLabel { text: root.mode === "screen" ? "This screen" : root.hasPanels ? "Whole scene" : "Picture" }
           Text {
             text: root.describe(inspector.t)
             color: root.fg

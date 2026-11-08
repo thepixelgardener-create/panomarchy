@@ -73,6 +73,15 @@ To open it from the keyboard, add a binding to `~/.config/hypr/bindings.lua`, fo
 o.bind("SUPER + CTRL + B", "Panomarchy", "omarchy-shell shell toggle thepixelgardener.panomarchy")
 ```
 
+## Wallpapers without panels
+
+Any other wallpaper, such as a stock theme's, can be shown two ways, chosen in the editor under **This wallpaper**:
+
+- **Fill each screen**, the default: every monitor shows the whole wallpaper, as Omarchy does. Moving and sizing it applies to every screen alike.
+- **Span across**: one picture across all your monitors, cut to each one's place in the layout, with autoscale and your per-monitor corrections, just like a scene with panels.
+
+Each wallpaper keeps its own choice and its own framing, so adjusting one never changes another; the scene settings of wallpapers with panels are shared between them. From a terminal, `omarchy-shell background setWallpaperMode span` (or `fill`, or `auto`) sets it for the wallpaper on screen, and `"plain": "span"` in the settings file makes spanning the default.
+
 ## Autoscale
 
 Monitors of different sizes show the same number of logical pixels at different physical sizes: on a 32-inch 4K at scale 2 a pixel is 0.36 mm, on a 24-inch 1080p screen 0.28 mm, so a scene running across them would shrink by a quarter at the bezel. Autoscale reads each monitor's physical size from Hyprland and enlarges or shrinks the panels so the scene is as large on every screen as on the main one, keeping it aligned at the middle of each shared edge. It is on by default; switch it in the editor or with
@@ -98,8 +107,6 @@ omarchy-shell background setScreen DP-3 y auto      # remove one setting
 omarchy-shell background resetScreens               # back to automatic, no moves
 ```
 
-The scene and screen settings apply to wallpapers that have panels, the ones that span your screens; any other wallpaper fills each screen exactly as Omarchy shows it, so tuning a scene never distorts the rest of your wallpapers.
-
 `x` and `y` are in logical pixels. The scene is sized about the main screen's centre. A screen's own `scale` comes on top of autoscale and pivots on the seam it shares with the main screen, or on its centre if it shows a picture of its own. A picture that only fills its screen is enlarged as needed, so a move never shows an empty edge; elsewhere a gap shows a blurred copy of the picture.
 
 The settings live in `~/.config/omarchy/panomarchy.json` and apply as soon as the file is saved, so you can also edit it by hand:
@@ -108,6 +115,9 @@ The settings live in `~/.config/omarchy/panomarchy.json` and apply as soon as th
 {
   "autoscale": true,
   "scene": { "x": 120, "y": 0, "scale": 1.1 },
+  "wallpapers": {
+    "03-carved-jade-horse.webp": { "mode": "span", "scene": { "scale": 1.2 } }
+  },
   "screens": {
     "HDMI-A-1": { "role": "main" },
     "DP-5": { "role": "left" },
