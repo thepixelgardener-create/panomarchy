@@ -66,48 +66,251 @@ Item {
   //   <folder>/<name>.<ext>                   the wallpaper, on the main screen
   //   <folder>/spans/<name>/left.<ext>        the screen to its left
   //   <folder>/spans/<name>/right.<ext>       the screen to its right
+  //   <folder>/spans/<name>/layout.json       optional: where the panels lie
+  //                                           (or spans/layout.json for all)
   //
   // <folder> is a theme's backgrounds folder or a user's own, such as
   // ~/.config/omarchy/backgrounds/<theme>/. Omarchy lists only the files
   // directly in it, so the panels never show up as wallpapers themselves.
   //
-  // The main screen is the one with the most physical pixels (the middle one
-  // on a tie). Every other wallpaper, and every screen without a panel, shows
-  // the wallpaper itself, exactly as the built-in background does.
+  // Every screen has a role: "main" shows the wallpaper, "left" and "right"
+  // show its panels, "wallpaper" shows the wallpaper itself as the built-in
+  // background does. By default the main screen is the one with the most
+  // physical pixels (the middle one on a tie) and the screens directly
+  // beside it are left and right. The user's settings file can name every
+  // role and move and scale the picture on any screen.
+  //
+  // With a layout, a panel is placed where it lies in the scene, measured
+  // from the wallpaper on the main screen through the monitor positions
+  // Hyprland reports, so the scene lines up across the bezels for any
+  // arrangement. Without one, a panel fills its screen.
   //
   // A transition names a snapshot of its wallpaper rather than the wallpaper
   // itself, so each snapshot remembers the wallpaper it stands for.
   property var spanSources: ({})
   readonly property string transitionCache: home + "/.cache/omarchy/background-transitions/"
 
-  readonly property var screenSides: {
-    var screens = []
-    for (var i = 0; i < Quickshell.screens.length; i++) screens.push(Quickshell.screens[i])
-    var sides = ({})
-    if (screens.length < 2) return sides
-    screens.sort(function(a, b) { return a.x - b.x })
-    var middle = (screens.length - 1) / 2
-    var main = 0
-    var most = -1
-    for (var j = 0; j < screens.length; j++) {
-      var s = screens[j]
-      var pixels = s.width * s.height * s.devicePixelRatio * s.devicePixelRatio
-      if (pixels > most || (pixels === most && Math.abs(j - middle) < Math.abs(main - middle))) {
-        most = pixels
-        main = j
+  // ~/.config/omarchy/multimonitor-background.json, read live:
+  //   { "screens": { "<output>": { "role": "main|left|right|wallpaper",
+  //                                "scale": 1.0, "x": 0, "y": 0 } } }
+  // x and y move the picture on that screen, in logical pixels; scale zooms
+  // it about the screen's centre. Every key is optional.
+  readonly property string configPath: home + "/.config/omarchy/multimonitor-background.json"
+  property var config: ({ screens: {} })
+  readonly property var roleNames: ["main", "left", "right", "wallpaper"]
+
+  function loadConfig(text) {
+    var parsed = {}
+    text = String(text || "").trim()
+    if (text) {
+      try {
+        parsed = JSON.parse(text)
+      } catch (e) {
+        // A half-typed edit keeps the settings that were working.
+        console.warn("multimonitor-background: " + configPath + ": " + e)
+        return
       }
     }
-    if (main > 0) sides[screens[main - 1].name] = "left"
-    if (main < screens.length - 1) sides[screens[main + 1].name] = "right"
-    return sides
+    if (!parsed || typeof parsed !== "object") parsed = {}
+    if (!parsed.screens || typeof parsed.screens !== "object") parsed.screens = {}
+    config = parsed
   }
 
-  function screenSide(screen) {
-    return (screen && screenSides[screen.name]) || "center"
+  function screenConfig(name) {
+    var entry = config.screens[name]
+    return entry && typeof entry === "object" ? entry : {}
+  }
+
+  function configuredRole(name) {
+    var role = String(screenConfig(name).role || "")
+    return roleNames.indexOf(role) !== -1 ? role : ""
+  }
+
+  function saveScreenSetting(name, key, value) {
+    var next = JSON.parse(JSON.stringify(config))
+    var entry = next.screens[name] && typeof next.screens[name] === "object" ? next.screens[name] : {}
+    if (value === undefined) delete entry[key]
+    else entry[key] = value
+    if (Object.keys(entry).length) next.screens[name] = entry
+    else delete next.screens[name]
+    config = next
+    configFile.setText(JSON.stringify(next, null, 2) + "\n")
+  }
+
+  // Each screen's role, by output name.
+  readonly property var screenRoles: {
+    var screens = []
+    for (var i = 0; i < Quickshell.screens.length; i++) screens.push(Quickshell.screens[i])
+    var roles = ({})
+    if (screens.length === 0) return roles
+    screens.sort(function(a, b) { return a.x - b.x || a.y - b.y })
+
+    var main = -1
+    for (var c = 0; c < screens.length && main < 0; c++) {
+      if (configuredRole(screens[c].name) === "main") main = c
+    }
+    if (main < 0) {
+      var middle = (screens.length - 1) / 2
+      var most = -1
+      for (var j = 0; j < screens.length; j++) {
+        var s = screens[j]
+        if (configuredRole(s.name)) continue
+        var pixels = s.width * s.height * s.devicePixelRatio * s.devicePixelRatio
+        if (pixels > most || (pixels === most && Math.abs(j - middle) < Math.abs(main - middle))) {
+          most = pixels
+          main = j
+        }
+      }
+    }
+    if (main < 0) main = 0
+    roles[screens[main].name] = "main"
+
+    var taken = ({ main: true })
+    for (var k = 0; k < screens.length; k++) {
+      if (k === main) continue
+      var role = configuredRole(screens[k].name)
+      if (role === "main") role = "wallpaper"
+      if (role) {
+        roles[screens[k].name] = role
+        taken[role] = true
+      }
+    }
+    // The screens directly beside the main one, unless the user said otherwise.
+    if (!taken.left && main > 0 && !roles[screens[main - 1].name]) roles[screens[main - 1].name] = "left"
+    if (!taken.right && main < screens.length - 1 && !roles[screens[main + 1].name]) roles[screens[main + 1].name] = "right"
+    for (var r = 0; r < screens.length; r++) {
+      if (!roles[screens[r].name]) roles[screens[r].name] = "wallpaper"
+    }
+    return roles
+  }
+
+  readonly property var mainScreen: {
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      if (screenRoles[Quickshell.screens[i].name] === "main") return Quickshell.screens[i]
+    }
+    return null
   }
 
   function spanSource(path) {
     return spanSources[path] || path
+  }
+
+  // Panel layouts, by wallpaper. A layout gives the wallpaper's size and each
+  // panel's rectangle in the same units, relative to the wallpaper's top left:
+  //   { "wallpaper": { "w": 1920, "h": 1080 },
+  //     "left":  { "x": -1080, "y": -480, "w": 1080, "h": 1920 },
+  //     "right": { "x": 1920,  "y": 70,   "w": 1920, "h": 1080 } }
+  // undefined while it is being read, null when there is none.
+  property var layouts: ({})
+  property var layoutQueue: []
+
+  function layoutKey(path) {
+    var real = spanSource(path)
+    if (!real || isVideo(real) || real.indexOf(transitionCache) === 0) return ""
+    return real
+  }
+
+  function layoutFor(path) {
+    var key = layoutKey(path)
+    return key ? layouts[key] : null
+  }
+
+  function requestLayout(path) {
+    var key = layoutKey(path)
+    if (!key || layouts[key] !== undefined || layoutQueue.indexOf(key) !== -1) return
+    layoutQueue = layoutQueue.concat([key])
+    probeNextLayout()
+  }
+
+  function probeNextLayout() {
+    if (layoutProbe.running || layoutQueue.length === 0) return
+    var key = layoutQueue[0]
+    var slash = key.lastIndexOf("/")
+    var folder = key.substring(0, slash)
+    var file = key.substring(slash + 1)
+    var dot = file.lastIndexOf(".")
+    var stem = dot > 0 ? file.substring(0, dot) : file
+    layoutProbe.key = key
+    layoutProbe.command = ["bash", "-c", 'cat -- "$1" 2>/dev/null || cat -- "$2" 2>/dev/null || true', "layout",
+                           folder + "/spans/" + stem + "/layout.json", folder + "/spans/layout.json"]
+    layoutProbe.running = true
+  }
+
+  function validRect(rect) {
+    if (!rect || typeof rect !== "object") return null
+    var x = Number(rect.x), y = Number(rect.y), w = Number(rect.w), h = Number(rect.h)
+    if (!isFinite(x) || !isFinite(y) || !(w > 0) || !(h > 0)) return null
+    return { x: x, y: y, w: w, h: h }
+  }
+
+  function validLayout(parsed) {
+    if (!parsed || typeof parsed !== "object") return null
+    var wall = parsed.wallpaper || {}
+    var layout = {
+      wallpaper: { w: Number(wall.w) > 0 ? Number(wall.w) : 1920, h: Number(wall.h) > 0 ? Number(wall.h) : 1080 },
+      left: validRect(parsed.left),
+      right: validRect(parsed.right)
+    }
+    return layout.left || layout.right ? layout : null
+  }
+
+  // The rectangle an image of the given native size covers on a w x h screen
+  // when it is scaled to cover it, as Omarchy's wallpapers are.
+  function coverRect(native, w, h) {
+    var aspect = native && native.width > 0 && native.height > 0 ? native.width / native.height : w / h
+    var rw = w, rh = h
+    if (w / h > aspect) rh = w / aspect
+    else rw = h * aspect
+    return { x: (w - rw) / 2, y: (h - rh) / 2, w: rw, h: rh }
+  }
+
+  // The user's zoom and shift for one screen, applied to a rectangle on it.
+  function adjusted(rect, settings, w, h) {
+    var scale = Number(settings.scale)
+    if (!(scale > 0)) scale = 1
+    var dx = Number(settings.x) || 0
+    var dy = Number(settings.y) || 0
+    return {
+      x: w / 2 + (rect.x - w / 2) * scale + dx,
+      y: h / 2 + (rect.y - h / 2) * scale + dy,
+      w: rect.w * scale,
+      h: rect.h * scale
+    }
+  }
+
+  // Grows a rectangle about its centre until it covers the screen, so a
+  // shift never shows an empty edge.
+  function covering(rect, w, h) {
+    var cx = rect.x + rect.w / 2
+    var cy = rect.y + rect.h / 2
+    var grow = Math.max(1, 2 * Math.max(cx, w - cx) / rect.w, 2 * Math.max(cy, h - cy) / rect.h)
+    if (grow <= 1.0001) return rect
+    return { x: cx - rect.w * grow / 2, y: cy - rect.h * grow / 2, w: rect.w * grow, h: rect.h * grow }
+  }
+
+  // The wallpaper's rectangle on the main screen, in global logical pixels.
+  function mainWallpaperRect(path) {
+    var main = mainScreen
+    var native = nativeSizes[path]
+    if (!main || native === undefined) return null
+    var rect = covering(adjusted(coverRect(native, main.width, main.height), screenConfig(main.name), main.width, main.height),
+                        main.width, main.height)
+    return { x: main.x + rect.x, y: main.y + rect.y, w: rect.w, h: rect.h }
+  }
+
+  // Where a panel lies on a screen, from its layout and the monitor layout.
+  function placedPanel(path, layout, side, screen) {
+    var panelRect = layout[side]
+    var wall = mainWallpaperRect(path)
+    if (!panelRect || !wall) return null
+    var kx = wall.w / layout.wallpaper.w
+    var ky = wall.h / layout.wallpaper.h
+    return {
+      x: wall.x + panelRect.x * kx - screen.x,
+      y: wall.y + panelRect.y * ky - screen.y,
+      w: panelRect.w * kx,
+      h: panelRect.h * ky
+    }
   }
 
   // The panel a wallpaper would have on one side, or "" for a video or a
@@ -123,17 +326,6 @@ Item {
     return real.substring(0, slash) + "/spans/" + file.substring(0, dot) + "/" + side + file.substring(dot)
   }
 
-  // What a screen shows for a wallpaper: its panel when there is one,
-  // the wallpaper itself when it does not, and "" until the panel's header
-  // has been read, so a side screen never decodes the wrong image first.
-  function screenPath(path, side) {
-    var panelPath = spanPanelPath(path, side)
-    if (!panelPath) return path
-    var native = nativeSizes[panelPath]
-    if (native === undefined) return ""
-    return native.width > 0 ? panelPath : path
-  }
-
   // A panel that will not load falls back to the wallpaper.
   function spanPanelFailed(panelPath) {
     var known = Object.assign({}, nativeSizes)
@@ -145,6 +337,7 @@ Item {
     requestNativeSize(path)
     requestNativeSize(spanPanelPath(path, "left"))
     requestNativeSize(spanPanelPath(path, "right"))
+    requestLayout(path)
   }
 
   // A file replaced at the same path, as when a theme is updated or panels
@@ -357,7 +550,13 @@ Item {
     for (var j = 0; j < paths.length; j++) {
       if (paths[j] && nativeSizes[paths[j]] !== undefined) kept[paths[j]] = nativeSizes[paths[j]]
     }
+    var keptLayouts = {}
+    for (var k = 0; k < inPlay.length; k++) {
+      var key = layoutKey(inPlay[k])
+      if (key && layouts[key] !== undefined) keptLayouts[key] = layouts[key]
+    }
     nativeSizes = kept
+    layouts = keptLayouts
     spanSources = sources
   }
 
@@ -398,6 +597,39 @@ Item {
       root.sizeQueue = root.sizeQueue.filter(function(queued) { return queued !== sizeProbe.path })
       root.probeNextSize()
     }
+  }
+
+  Process {
+    id: layoutProbe
+    property string key: ""
+    stdout: StdioCollector { id: layoutProbeOut }
+    onExited: function() {
+      var parsed = null
+      var text = String(layoutProbeOut.text || "").trim()
+      if (text) {
+        try {
+          parsed = JSON.parse(text)
+        } catch (e) {
+          console.warn("multimonitor-background: layout for " + key + ": " + e)
+        }
+      }
+      var known = Object.assign({}, root.layouts)
+      known[key] = root.validLayout(parsed)
+      root.layouts = known
+      root.layoutQueue = root.layoutQueue.filter(function(queued) { return queued !== layoutProbe.key })
+      root.probeNextLayout()
+    }
+  }
+
+  FileView {
+    id: configFile
+    path: root.configPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.loadConfig(text())
+    onLoadFailed: root.loadConfig("")
   }
 
   Process {
@@ -454,13 +686,57 @@ Item {
       root.prepareBackground(path)
     }
 
-    // omarchy-shell background spans: which file each screen shows.
+    // omarchy-shell background spans: which file each screen shows, and how.
     function spans(): string {
       var lines = []
       for (var panel of backgrounds.instances) {
-        lines.push(panel.modelData.name + "\t" + panel.side + "\t" + (panel.pathFor(root.displayedBackground) || "(waiting)"))
+        var view = panel.baseView
+        lines.push(panel.modelData.name + "\t" + panel.role + "\t" + (view ? view.file : "(waiting)")
+                   + (view ? "\t" + view.how : ""))
       }
       return lines.join("\n")
+    }
+
+    // omarchy-shell background screens: every screen, its position and its settings.
+    function screens(): string {
+      var lines = ["settings: " + root.configPath]
+      for (var i = 0; i < Quickshell.screens.length; i++) {
+        var s = Quickshell.screens[i]
+        var settings = root.screenConfig(s.name)
+        lines.push(s.name + "\t" + root.screenRoles[s.name] + (root.configuredRole(s.name) ? " (set)" : " (auto)")
+                   + "\t" + s.width + "x" + s.height + " at " + s.x + "," + s.y + " scale " + s.devicePixelRatio
+                   + "\tsettings " + JSON.stringify(settings))
+      }
+      return lines.join("\n")
+    }
+
+    // omarchy-shell background setScreen <output> <role|scale|x|y> <value>;
+    // the value "auto" removes the setting.
+    function setScreen(name: string, key: string, value: string): string {
+      if (["role", "scale", "x", "y"].indexOf(key) === -1) return "unknown setting: " + key + " (role, scale, x or y)"
+      var known = false
+      for (var i = 0; i < Quickshell.screens.length; i++) known = known || Quickshell.screens[i].name === name
+      if (!known) return "unknown screen: " + name + " (see omarchy-shell background screens)"
+      if (value === "auto" || value === "") {
+        root.saveScreenSetting(name, key, undefined)
+        return "ok"
+      }
+      if (key === "role") {
+        if (root.roleNames.indexOf(value) === -1) return "unknown role: " + value + " (main, left, right, wallpaper or auto)"
+        root.saveScreenSetting(name, key, value)
+        return "ok"
+      }
+      var number = Number(value)
+      if (!isFinite(number) || (key === "scale" && number <= 0)) return "not a number: " + value
+      root.saveScreenSetting(name, key, number)
+      return "ok"
+    }
+
+    // omarchy-shell background resetScreens: back to automatic roles, no shifts.
+    function resetScreens(): string {
+      root.config = { screens: {} }
+      configFile.setText(JSON.stringify(root.config, null, 2) + "\n")
+      return "ok"
     }
 
     // omarchy-shell background spanState: the service's and every screen's state, for debugging.
@@ -469,7 +745,8 @@ Item {
         "displayed=" + root.displayedBackground, "current=" + root.currentBackground,
         "incoming=" + root.incomingBackground, "old=" + root.oldBackground, "prepared=" + root.preparedBackground,
         "reveal=" + root.revealProgress + " finishing=" + root.finishingTransition + " ready=" + root.ready + " suspended=" + root.suspended,
-        "sizes=" + JSON.stringify(root.nativeSizes), "sources=" + JSON.stringify(root.spanSources)
+        "sizes=" + JSON.stringify(root.nativeSizes), "layouts=" + JSON.stringify(root.layouts),
+        "sources=" + JSON.stringify(root.spanSources), "config=" + JSON.stringify(root.config)
       ]
       for (var panel of backgrounds.instances) lines.push(panel.debugState())
       return lines.join("\n")
@@ -544,19 +821,60 @@ Item {
       updatesEnabled: true
 
       property bool maskReady: false
-      // "left" or "right" beside the main screen of a span, else "center".
-      readonly property string side: root.screenSide(modelData)
-      function pathFor(path) {
-        return root.screenPath(path, side)
+      // main, left, right or wallpaper; see screenRoles.
+      readonly property string role: root.screenRoles[modelData.name] || "main"
+
+      // What this screen shows for a wallpaper: the file and where it lies on
+      // the screen, in logical pixels. null until the sizes and layout it
+      // depends on have been read, so nothing is ever decoded twice.
+      function view(path) {
+        if (!path || !sized) return null
+        var file = path
+        if (role === "left" || role === "right") {
+          var panelPath = root.spanPanelPath(path, role)
+          if (panelPath) {
+            var panelSize = root.nativeSizes[panelPath]
+            if (panelSize === undefined) return null
+            if (panelSize.width > 0) file = panelPath
+          }
+        }
+        var native = root.nativeSizes[file]
+        if (native === undefined) return null
+        var settings = root.screenConfig(modelData.name)
+        var rect = null
+        var how = "fill"
+        if (file !== path) {
+          var layout = root.layoutFor(path)
+          if (layout === undefined) return null
+          if (layout && layout[role]) {
+            rect = root.placedPanel(path, layout, role, modelData)
+            if (!rect && root.nativeSizes[path] === undefined) return null
+            if (rect) {
+              rect = root.adjusted(rect, settings, width, height)
+              how = "aligned"
+            }
+          }
+        }
+        if (!rect) rect = root.covering(root.adjusted(root.coverRect(native, width, height), settings, width, height), width, height)
+        var covers = rect.x <= 0.5 && rect.y <= 0.5 && rect.x + rect.w >= width - 0.5 && rect.y + rect.h >= height - 0.5
+        return { file: file, x: rect.x, y: rect.y, w: rect.w, h: rect.h, covers: covers,
+                 how: how + " " + Math.round(rect.w) + "x" + Math.round(rect.h) + " at " + Math.round(rect.x) + "," + Math.round(rect.y)
+                      + (covers ? "" : ", gaps filled") }
       }
-      // While this screen shows a span panel, the base already draws exactly
-      // what is on screen, so it stands in for the old frame. The snapshot a
+
+      readonly property var baseView: view(root.displayedBackground)
+      // While this screen shows a panel, the base already draws exactly what
+      // is on screen, so it stands in for the old frame. The snapshot a
       // transition names is of the wallpaper, not of this screen's panel.
-      readonly property bool oldOnBase: side !== "center" && root.displayedBackground !== ""
-        && pathFor(root.displayedBackground) !== root.displayedBackground
+      readonly property bool oldOnBase: (role === "left" || role === "right") && !!baseView
+        && baseView.file !== root.displayedBackground
+      readonly property var oldView: oldOnBase || !root.oldBackground ? null : view(root.oldBackground)
+      readonly property var incomingView: view(root.incomingBackground || root.preparedBackground)
+
       function debugState() {
-        return modelData.name + " side=" + side + " oldOnBase=" + oldOnBase + " maskReady=" + maskReady
-          + "\n  base path=" + base.path + " decode=" + base.decodeSize + " ready=" + base.ready + " failed=" + base.failed + " readyFrames=" + readyFrames
+        return modelData.name + " role=" + role + " oldOnBase=" + oldOnBase + " maskReady=" + maskReady
+          + "\n  base " + (baseView ? baseView.file + " " + baseView.how : "(waiting)") + " decode=" + base.decodeSize
+          + " ready=" + base.ready + " failed=" + base.failed + " readyFrames=" + readyFrames + " underlay=" + underlay.visible
           + "\n  old path=" + oldFrame.framePath + " status=" + oldFrame.status + " visible=" + oldFrame.visible
           + "\n  incoming path=" + incomingFrame.framePath + " status=" + incomingFrame.status + " layer=" + incomingLayer.visible
       }
@@ -583,15 +901,20 @@ Item {
       // decoded at native size first, and a wallpaper smaller than the screen
       // is decoded at its own size rather than scaled up to cover the screen.
       readonly property bool sized: width > 0 && height > 0
-      readonly property int decodeWidth: sized ? Math.ceil(width * screen.devicePixelRatio) : 0
-      readonly property int decodeHeight: sized ? Math.ceil(height * screen.devicePixelRatio) : 0
 
-      function decodeSize(path) {
-        if (!sized || !path) return Qt.size(0, 0)
-        var native = root.nativeSizes[path]
+      // A view's image is decoded at the size it is drawn, in physical pixels.
+      function decodeSize(view) {
+        if (!sized || !view) return Qt.size(0, 0)
+        var native = root.nativeSizes[view.file]
         if (native === undefined) return Qt.size(0, 0)
-        if (native.width > 0 && (native.width < decodeWidth || native.height < decodeHeight)) return Qt.size(native.width, native.height)
-        return Qt.size(decodeWidth, decodeHeight)
+        var w = Math.ceil(view.w * screen.devicePixelRatio)
+        var h = Math.ceil(view.h * screen.devicePixelRatio)
+        if (native.width > 0 && (native.width < w || native.height < h)) return Qt.size(native.width, native.height)
+        return Qt.size(w, h)
+      }
+
+      function screenDecodeSize(view) {
+        return decodeSize(view ? { file: view.file, w: width, h: height } : null)
       }
 
       function maybeStartReveal() {
@@ -609,14 +932,37 @@ Item {
 
       // OWE owns video backgrounds. This layer draws stills, and stays empty
       // behind a video so OWE's own layer shows through.
+      // A placed panel that leaves part of its screen uncovered stands on a
+      // blurred copy of itself filling the screen, never on black.
       BackgroundMedia {
-        id: base
+        id: underlay
         anchors.fill: parent
-        path: panel.pathFor(root.displayedBackground)
+        visible: !!panel.baseView && !panel.baseView.covers
+        path: visible ? panel.baseView.file : ""
         version: root.reloadVersion + root.fileStamp(path)
         cached: true
         constrainDecode: true
-        decodeSize: panel.decodeSize(path)
+        decodeSize: panel.screenDecodeSize(panel.baseView)
+        layer.enabled: visible
+        layer.effect: MultiEffect {
+          blurEnabled: true
+          blur: 1.0
+          blurMax: 48
+          brightness: -0.15
+        }
+      }
+
+      BackgroundMedia {
+        id: base
+        x: panel.baseView ? panel.baseView.x : 0
+        y: panel.baseView ? panel.baseView.y : 0
+        width: panel.baseView ? panel.baseView.w : panel.width
+        height: panel.baseView ? panel.baseView.h : panel.height
+        path: panel.baseView ? panel.baseView.file : ""
+        version: root.reloadVersion + root.fileStamp(path)
+        cached: true
+        constrainDecode: true
+        decodeSize: panel.decodeSize(panel.baseView)
         onFailedChanged: {
           if (!failed) return
           if (path !== root.displayedBackground) root.spanPanelFailed(path)
@@ -627,9 +973,12 @@ Item {
 
       Image {
         id: oldFrame
-        anchors.fill: parent
-        readonly property string framePath: panel.oldOnBase ? "" : panel.pathFor(root.oldBackground)
-        readonly property size decode: panel.decodeSize(framePath)
+        x: panel.oldView ? panel.oldView.x : 0
+        y: panel.oldView ? panel.oldView.y : 0
+        width: panel.oldView ? panel.oldView.w : panel.width
+        height: panel.oldView ? panel.oldView.h : panel.height
+        readonly property string framePath: panel.oldView ? panel.oldView.file : ""
+        readonly property size decode: panel.decodeSize(panel.oldView)
         source: decode.width > 0 ? root.imageUrl(framePath) : ""
         sourceSize.width: decode.width
         sourceSize.height: decode.height
@@ -659,11 +1008,14 @@ Item {
 
         Image {
           id: incomingFrame
-          anchors.fill: parent
+          x: panel.incomingView ? panel.incomingView.x : 0
+          y: panel.incomingView ? panel.incomingView.y : 0
+          width: panel.incomingView ? panel.incomingView.w : panel.width
+          height: panel.incomingView ? panel.incomingView.h : panel.height
           // The same URL and size as a prepared frame keeps its decoded
           // image, so a transition to it can reveal at once.
-          readonly property string framePath: panel.pathFor(root.incomingBackground || root.preparedBackground)
-          readonly property size decode: panel.decodeSize(framePath)
+          readonly property string framePath: panel.incomingView ? panel.incomingView.file : ""
+          readonly property size decode: panel.decodeSize(panel.incomingView)
           source: decode.width > 0 ? root.imageUrl(framePath) : ""
           sourceSize.width: decode.width
           sourceSize.height: decode.height
