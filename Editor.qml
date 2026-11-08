@@ -37,6 +37,9 @@ Item {
   property bool gesturing: false
 
   readonly property string pluginId: "thepixelgardener.panomarchy"
+  // Whether the wallpaper on screen has panels; only then is there a scene
+  // to adjust. A plain wallpaper fills every screen as Omarchy shows it.
+  readonly property bool spanned: !!service && service.isSpan(service.displayedBackground) === true
   readonly property string mainName: service && service.mainScreen ? service.mainScreen.name : ""
   readonly property color accent: Commons.Color.accent
   readonly property color fg: Commons.Color.foreground
@@ -101,7 +104,7 @@ Item {
   }
 
   function targetBox() {
-    if (!service) return null
+    if (!service || !spanned) return null
     if (mode === "scene") return service.mainWallpaperRect(service.displayedBackground)
     var screen = screenByName(selected)
     var view = service.screenView(selected)
@@ -109,7 +112,7 @@ Item {
   }
 
   function applyTransform(t, deferWrite) {
-    if (!service) return
+    if (!service || !spanned) return
     var scale = Math.round(Math.max(0.2, Math.min(5, t.scale)) * 1000) / 1000
     var clean = {
       x: Math.round(t.x) === 0 ? undefined : Math.round(t.x),
@@ -427,6 +430,7 @@ Item {
           MouseArea {
             id: mover
             anchors.fill: parent
+            enabled: root.spanned
             acceptedButtons: Qt.LeftButton
             cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
             property var start: null
@@ -543,6 +547,16 @@ Item {
 
           readonly property var screenObj: root.screenByName(root.selected)
           readonly property var t: root.service ? root.service.transformOf(root.mode === "scene" ? root.service.sceneConfig() : root.service.screenConfig(root.selected)) : ({ scale: 1, x: 0, y: 0 })
+
+          Text {
+            visible: !root.spanned
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "This wallpaper has no panels, so every screen shows it as Omarchy does. Your adjustments are kept for wallpapers that span the screens, such as Gargantuan's."
+            color: root.accent
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body * 0.9
+          }
 
           SectionLabel { text: "Adjust" }
           ButtonGroup {

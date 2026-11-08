@@ -98,6 +98,8 @@ omarchy-shell background setScreen DP-3 y auto      # remove one setting
 omarchy-shell background resetScreens               # back to automatic, no moves
 ```
 
+The scene and screen settings apply to wallpapers that have panels, the ones that span your screens; any other wallpaper fills each screen exactly as Omarchy shows it, so tuning a scene never distorts the rest of your wallpapers.
+
 `x` and `y` are in logical pixels. The scene is sized about the main screen's centre. A screen's own `scale` comes on top of autoscale and pivots on the seam it shares with the main screen, or on its centre if it shows a picture of its own. A picture that only fills its screen is enlarged as needed, so a move never shows an empty edge; elsewhere a gap shows a blurred copy of the picture.
 
 The settings live in `~/.config/omarchy/panomarchy.json` and apply as soon as the file is saved, so you can also edit it by hand:

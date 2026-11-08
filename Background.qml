@@ -483,6 +483,23 @@ Item {
     return real.substring(0, slash) + "/spans/" + file.substring(0, dot) + "/" + side + file.substring(dot)
   }
 
+  // Whether a wallpaper brings panels of its own; undefined until both
+  // panel files have been looked for. Only such a wallpaper is a scene: the
+  // scene and screen settings apply to it, and every other wallpaper fills
+  // each screen exactly as Omarchy's own background does.
+  function isSpan(path) {
+    var found = false
+    var sides = ["left", "right"]
+    for (var i = 0; i < sides.length; i++) {
+      var panelPath = spanPanelPath(path, sides[i])
+      if (!panelPath) continue
+      var size = nativeSizes[panelPath]
+      if (size === undefined) return undefined
+      if (size.width > 0) found = true
+    }
+    return found
+  }
+
   // A panel that will not load falls back to the wallpaper.
   function spanPanelFailed(panelPath) {
     var known = Object.assign({}, nativeSizes)
@@ -1060,6 +1077,15 @@ Item {
       // depends on have been read, so nothing is ever decoded twice.
       function view(path) {
         if (!path || !sized) return null
+        var spanned = root.isSpan(path)
+        if (spanned === undefined) return null
+        if (!spanned) {
+          var plainSize = root.nativeSizes[path]
+          if (plainSize === undefined) return null
+          var plain = root.coverRect(plainSize, width, height)
+          return { file: path, x: plain.x, y: plain.y, w: plain.w, h: plain.h, covers: true, aligned: false,
+                   how: "plain " + Math.round(plain.w) + "x" + Math.round(plain.h) + " at " + Math.round(plain.x) + "," + Math.round(plain.y) }
+        }
         var file = path
         if (role === "left" || role === "right") {
           var panelPath = root.spanPanelPath(path, role)
