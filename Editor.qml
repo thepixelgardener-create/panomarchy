@@ -314,6 +314,7 @@ Item {
               sourceSize.width: 960
               fillMode: Image.PreserveAspectCrop
               asynchronous: true
+              cache: false
             }
           }
 
@@ -346,8 +347,8 @@ Item {
                   sourceSize.width: 960
                   fillMode: Image.PreserveAspectCrop
                   asynchronous: true
+                  cache: false
                   smooth: true
-                  mipmap: true
                 }
               }
 

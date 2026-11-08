@@ -150,7 +150,7 @@ omarchy-shell background spans       # the file each screen shows and where it s
 omarchy-shell background spanState   # the full state of the service and every screen
 ```
 
-If a screen stays black or shows the wrong picture, `omarchy restart shell` puts it right; please open an issue with the `spanState` output.
+If a screen stays black or shows the wrong picture, first run `omarchy-shell background repaint`, which gives every background window a fresh surface; if that does not help, `omarchy restart shell` will. Please open an issue with the `spanState` output from before.
 
 ## Limits
 

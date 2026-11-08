@@ -793,6 +793,13 @@ Item {
   }
 
   Timer {
+    id: repaintTimer
+    interval: 300
+    repeat: false
+    onTriggered: root.suspended = false
+  }
+
+  Timer {
     id: monitorRefresh
     interval: 500
     repeat: false
@@ -912,6 +919,16 @@ Item {
     function setAutoscale(value: string): string {
       if (value !== "on" && value !== "off") return "use on or off"
       root.setAutoscale(value === "on")
+      return "ok"
+    }
+
+    // omarchy-shell background repaint: hide every background window and
+    // show it again with a fresh surface. A background layer has been seen
+    // to stop showing its picture until the shell restarts; this brings it
+    // back without the restart.
+    function repaint(): string {
+      root.suspended = true
+      repaintTimer.restart()
       return "ok"
     }
 
