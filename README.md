@@ -49,12 +49,19 @@ Click the plugin's icon in the bar (three screens sharing one horizon), middle-c
 omarchy-shell shell toggle thepixelgardener.multimonitor-background
 ```
 
-The editor draws your monitors where Hyprland puts them, each with the picture it shows now, and the desktop behind follows every change as you make it:
+The editor draws your monitors where Hyprland puts them, each with the picture it shows now, and the desktop behind follows every change as you make it. At the top right you choose what to adjust:
 
-- **Drag** a screen's picture to move it. Dragging the main screen moves the whole scene, panels included.
-- **Scroll** over a screen to zoom its picture; **double-click** to put it back.
-- **Arrow keys** nudge the selected screen by 1 px (10 with Shift), **+** and **−** zoom, **Tab** picks the next screen, **0** resets it, **Esc** closes.
-- **Shows** picks the selected screen's role, **Autoscale** switches autoscaling for all screens.
+- **Whole scene**: the picture across all screens at once. The side screens follow the main one, so this is how you place the scene where you want it.
+- **One screen**: the picture on a single monitor, for when autoscale does not quite match it. Its size pivots on the edge it shares with the main screen, so the scene stays attached at the bezel while you make it larger or smaller.
+
+What you adjust has an orange box around it. Then:
+
+- **Drag** anywhere to move it.
+- **Drag a corner** of the box to resize it; the opposite corner stays where it is.
+- **Scroll** to zoom about the pointer; **double-click** to reset.
+- In One screen mode, **click** a screen to pick it; **Shows** sets its role.
+- Keys: **arrows** nudge by 1 px (10 with Shift), **+** and **−** zoom, **Tab** picks the next screen, **S** goes back to the whole scene, **0** resets, **Esc** closes.
+- **Autoscale** switches autoscaling for all screens; **Reset all** clears every setting.
 
 To open it from the keyboard, add a binding to `~/.config/hypr/bindings.lua`, for example:
 
@@ -78,21 +85,23 @@ Everything the editor does can also be done from a terminal:
 
 ```bash
 omarchy-shell background screens                    # every screen, its role, size and settings
+omarchy-shell background setScene x 120             # move the whole scene 120 px right
+omarchy-shell background setScene scale 1.1         # and make it 10 % larger
 omarchy-shell background setScreen HDMI-A-1 role main
-omarchy-shell background setScreen DP-3 y -12       # move the picture 12 px up
-omarchy-shell background setScreen DP-3 x 8         # and 8 px right
-omarchy-shell background setScreen DP-3 scale 1.05  # zoom 5 % about the screen's centre
+omarchy-shell background setScreen DP-3 y -12       # move one screen's picture 12 px up
+omarchy-shell background setScreen DP-3 scale 1.05  # make it 5 % larger, about its seam
 omarchy-shell background setScreen DP-3 y auto      # remove one setting
-omarchy-shell background resetScreens               # back to automatic, no shifts
+omarchy-shell background resetScreens               # back to automatic, no moves
 ```
 
-`x` and `y` are in logical pixels of that screen; `scale` comes on top of autoscale. A wallpaper or panel that only fills its screen is enlarged as needed, so a shift never shows an empty edge.
+`x` and `y` are in logical pixels. The scene is sized about the main screen's centre. A screen's own `scale` comes on top of autoscale and pivots on the seam it shares with the main screen, or on its centre if it shows a picture of its own. A picture that only fills its screen is enlarged as needed, so a move never shows an empty edge; elsewhere a gap shows a blurred copy of the picture.
 
 The settings live in `~/.config/omarchy/multimonitor-background.json` and apply as soon as the file is saved, so you can also edit it by hand:
 
 ```json
 {
   "autoscale": true,
+  "scene": { "x": 120, "y": 0, "scale": 1.1 },
   "screens": {
     "HDMI-A-1": { "role": "main" },
     "DP-5": { "role": "left" },

@@ -161,12 +161,38 @@ Item {
     persistConfig()
   }
 
+  // One screen's settings, or with no name every screen's and the scene's.
   function resetScreenSettings(name) {
     var next = JSON.parse(JSON.stringify(config))
-    if (name) delete next.screens[name]
-    else next.screens = {}
+    if (name) {
+      delete next.screens[name]
+    } else {
+      next.screens = {}
+      delete next.scene
+    }
     config = next
     persistConfig()
+  }
+
+  // The whole scene's move and size: { "scene": { "x": 0, "y": 0, "scale": 1 } }.
+  // It moves and sizes the wallpaper on the main screen, and every panel
+  // placed by a layout follows it.
+  function sceneConfig() {
+    var scene = config.scene
+    return scene && typeof scene === "object" ? scene : {}
+  }
+
+  function saveScene(values, deferWrite) {
+    var next = JSON.parse(JSON.stringify(config))
+    var scene = next.scene && typeof next.scene === "object" ? next.scene : {}
+    for (var key in values) {
+      if (values[key] === undefined) delete scene[key]
+      else scene[key] = values[key]
+    }
+    if (Object.keys(scene).length) next.scene = scene
+    else delete next.scene
+    config = next
+    if (!deferWrite) persistConfig()
   }
 
   function persistConfig() {
@@ -217,18 +243,38 @@ Item {
     return factor > 0.25 && factor < 4 ? factor : 1
   }
 
-  // A placed panel, autoscaled about the middle of the edge its screen
-  // shares with the main screen, so the scene still meets at that seam.
-  function autoscaled(rect, screen) {
-    var factor = autoScaleFor(screen)
+  // The middle of the edge a screen shares with the main screen, in the
+  // screen's own coordinates. Panels are scaled about it, so the scene keeps
+  // meeting at that seam however much a panel grows or shrinks.
+  function seamAnchor(screen) {
     var main = mainScreen
-    if (Math.abs(factor - 1) < 0.001 || !main) return rect
+    if (!main || !screen) return { x: 0, y: 0 }
     var ax = Math.max(0, Math.min(screen.width, main.x + main.width / 2 - screen.x))
     var top = Math.max(screen.y, main.y)
     var bottom = Math.min(screen.y + screen.height, main.y + main.height)
     var ay = bottom > top ? (top + bottom) / 2 - screen.y
                           : Math.max(0, Math.min(screen.height, main.y + main.height / 2 - screen.y))
-    return { x: ax + (rect.x - ax) * factor, y: ay + (rect.y - ay) * factor, w: rect.w * factor, h: rect.h * factor }
+    return { x: ax, y: ay }
+  }
+
+  // The centre of the main screen, in global coordinates: the scene is sized
+  // about it.
+  function sceneAnchor() {
+    var main = mainScreen
+    return main ? { x: main.x + main.width / 2, y: main.y + main.height / 2 } : { x: 0, y: 0 }
+  }
+
+  // The point a screen's own size setting pivots on, in global coordinates:
+  // the seam for a placed panel, the screen's centre for anything else.
+  function screenAnchor(name) {
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      var screen = Quickshell.screens[i]
+      if (screen.name !== name) continue
+      var view = screenView(name)
+      var local = view && view.aligned ? seamAnchor(screen) : { x: screen.width / 2, y: screen.height / 2 }
+      return { x: screen.x + local.x, y: screen.y + local.y }
+    }
+    return { x: 0, y: 0 }
   }
 
   // What a screen shows now, for the editor.
@@ -371,17 +417,19 @@ Item {
     return { x: (w - rw) / 2, y: (h - rh) / 2, w: rw, h: rh }
   }
 
-  // The user's zoom and shift for one screen, applied to a rectangle on it.
-  function adjusted(rect, settings, w, h) {
+  // A move and size setting as numbers: { scale, x, y }.
+  function transformOf(settings) {
     var scale = Number(settings.scale)
-    if (!(scale > 0)) scale = 1
-    var dx = Number(settings.x) || 0
-    var dy = Number(settings.y) || 0
+    return { scale: scale > 0 ? scale : 1, x: Number(settings.x) || 0, y: Number(settings.y) || 0 }
+  }
+
+  // A rectangle sized about an anchor point and then moved.
+  function transformed(rect, anchor, t) {
     return {
-      x: w / 2 + (rect.x - w / 2) * scale + dx,
-      y: h / 2 + (rect.y - h / 2) * scale + dy,
-      w: rect.w * scale,
-      h: rect.h * scale
+      x: anchor.x + (rect.x - anchor.x) * t.scale + t.x,
+      y: anchor.y + (rect.y - anchor.y) * t.scale + t.y,
+      w: rect.w * t.scale,
+      h: rect.h * t.scale
     }
   }
 
@@ -395,14 +443,16 @@ Item {
     return { x: cx - rect.w * grow / 2, y: cy - rect.h * grow / 2, w: rect.w * grow, h: rect.h * grow }
   }
 
-  // The wallpaper's rectangle on the main screen, in global logical pixels.
+  // The scene: the wallpaper's rectangle on the main screen, moved and sized
+  // by the scene setting, in global logical pixels. The main screen's own
+  // setting comes on top of it for that screen alone.
   function mainWallpaperRect(path) {
     var main = mainScreen
     var native = nativeSizes[path]
     if (!main || native === undefined) return null
-    var rect = covering(adjusted(coverRect(native, main.width, main.height), screenConfig(main.name), main.width, main.height),
-                        main.width, main.height)
-    return { x: main.x + rect.x, y: main.y + rect.y, w: rect.w, h: rect.h }
+    var cover = coverRect(native, main.width, main.height)
+    return transformed({ x: main.x + cover.x, y: main.y + cover.y, w: cover.w, h: cover.h },
+                       sceneAnchor(), transformOf(sceneConfig()))
   }
 
   // Where a panel lies on a screen, from its layout and the monitor layout.
@@ -827,7 +877,8 @@ Item {
 
     // omarchy-shell background screens: every screen, its position and its settings.
     function screens(): string {
-      var lines = ["settings: " + root.configPath + ", autoscale " + (root.autoscale ? "on" : "off")]
+      var lines = ["settings: " + root.configPath + ", autoscale " + (root.autoscale ? "on" : "off")
+                   + ", scene " + JSON.stringify(root.sceneConfig())]
       for (var i = 0; i < Quickshell.screens.length; i++) {
         var s = Quickshell.screens[i]
         var settings = root.screenConfig(s.name)
@@ -839,6 +890,22 @@ Item {
                    + "\tsettings " + JSON.stringify(settings))
       }
       return lines.join("\n")
+    }
+
+    // omarchy-shell background setScene <x|y|scale> <value>: move or size the
+    // whole scene; the value "auto" removes the setting.
+    function setScene(key: string, value: string): string {
+      if (["scale", "x", "y"].indexOf(key) === -1) return "unknown setting: " + key + " (scale, x or y)"
+      var values = {}
+      if (value === "auto" || value === "") {
+        values[key] = undefined
+      } else {
+        var number = Number(value)
+        if (!isFinite(number) || (key === "scale" && number <= 0)) return "not a number: " + value
+        values[key] = number
+      }
+      root.saveScene(values, false)
+      return "ok"
     }
 
     // omarchy-shell background setAutoscale <on|off>
@@ -987,25 +1054,36 @@ Item {
         }
         var native = root.nativeSizes[file]
         if (native === undefined) return null
-        var settings = root.screenConfig(modelData.name)
+        // This screen's own move and size, on top of everything else.
+        var own = root.transformOf(root.screenConfig(modelData.name))
+        var center = { x: width / 2, y: height / 2 }
         var rect = null
         var how = "fill"
-        if (file !== path) {
+        var aligned = false
+        if (role === "main" && file === path) {
+          // The scene, then this screen's own setting about its centre.
+          var scene = root.mainWallpaperRect(path)
+          rect = root.transformed({ x: scene.x - modelData.x, y: scene.y - modelData.y, w: scene.w, h: scene.h }, center, own)
+          how = "scene"
+        } else if (file !== path) {
           var layout = root.layoutFor(path)
           if (layout === undefined) return null
           if (layout && layout[role]) {
             rect = root.placedPanel(path, layout, role, modelData)
             if (!rect && root.nativeSizes[path] === undefined) return null
             if (rect) {
+              // Autoscale and this screen's own size both pivot on the seam.
+              var seam = root.seamAnchor(modelData)
               var factor = root.autoScaleFor(modelData)
-              rect = root.adjusted(root.autoscaled(rect, modelData), settings, width, height)
+              rect = root.transformed(rect, seam, { scale: factor * own.scale, x: own.x, y: own.y })
+              aligned = true
               how = "aligned" + (Math.abs(factor - 1) >= 0.001 ? " autoscale x" + factor.toFixed(3) : "")
             }
           }
         }
-        if (!rect) rect = root.covering(root.adjusted(root.coverRect(native, width, height), settings, width, height), width, height)
+        if (!rect) rect = root.covering(root.transformed(root.coverRect(native, width, height), center, own), width, height)
         var covers = rect.x <= 0.5 && rect.y <= 0.5 && rect.x + rect.w >= width - 0.5 && rect.y + rect.h >= height - 0.5
-        return { file: file, x: rect.x, y: rect.y, w: rect.w, h: rect.h, covers: covers,
+        return { file: file, x: rect.x, y: rect.y, w: rect.w, h: rect.h, covers: covers, aligned: aligned,
                  how: how + " " + Math.round(rect.w) + "x" + Math.round(rect.h) + " at " + Math.round(rect.x) + "," + Math.round(rect.y)
                       + (covers ? "" : ", gaps filled") }
       }
