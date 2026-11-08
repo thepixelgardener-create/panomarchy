@@ -247,6 +247,51 @@ Item {
           font.pixelSize: Style.font.body
         }
 
+        // A little Esc key in the corner: click it, or press Esc, to close.
+        Item {
+          id: escKey
+          anchors { right: parent.right; verticalCenter: title.verticalCenter; rightMargin: Style.space(20) }
+          width: escLabel.implicitWidth + Style.space(20)
+          height: escLabel.implicitHeight + Style.space(12)
+          readonly property bool hot: escMouse.containsMouse
+          readonly property color edge: hot ? root.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.45)
+          readonly property real depth: Math.max(2, Style.space(3))
+
+          // The key's side, showing below its face like a keycap's.
+          Rectangle {
+            anchors.fill: parent
+            radius: Style.space(6)
+            color: Qt.rgba(escKey.edge.r, escKey.edge.g, escKey.edge.b, 0.35)
+          }
+          Rectangle {
+            anchors { left: parent.left; right: parent.right; top: parent.top }
+            anchors.topMargin: escMouse.pressed ? escKey.depth * 2 / 3 : 0
+            height: parent.height - escKey.depth
+            radius: Style.space(6)
+            color: escKey.hot ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14) : Commons.Color.popups.background
+            border.color: escKey.edge
+            border.width: Math.max(1, Style.space(1.5))
+
+            Text {
+              id: escLabel
+              anchors.centerIn: parent
+              text: "Esc"
+              color: escKey.hot ? root.accent : root.fg
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body * 0.9
+              font.bold: true
+            }
+          }
+
+          MouseArea {
+            id: escMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.dismiss()
+          }
+        }
+
         // The monitors, laid out as Hyprland places them.
         Item {
           id: canvas
