@@ -35,32 +35,60 @@ Every screen has a role:
 | `right` | the wallpaper's right panel |
 | `wallpaper` | the wallpaper itself, as without the plugin |
 
-By default the **main** screen is the one with the most physical pixels (on a tie, the one nearest the middle), the screens directly to its left and right are **left** and **right**, and any other screen shows the wallpaper. A screen whose panel is missing shows the wallpaper too. See what each screen does:
+By default the **main** screen is the one with the most physical pixels (on a tie, the one nearest the middle), the screens directly to its left and right are **left** and **right**, and any other screen shows the wallpaper. A screen whose panel is missing shows the wallpaper too. Change any of it in the editor below.
+
+## The editor
+
+Middle-click the desktop, or run
 
 ```bash
-omarchy-shell background screens   # every screen, its position, role and settings
-omarchy-shell background spans     # the file each screen shows and where it sits
+omarchy-shell shell toggle thepixelgardener.multimonitor-background
 ```
+
+The editor draws your monitors where Hyprland puts them, each with the picture it shows now, and the desktop behind follows every change as you make it:
+
+- **Drag** a screen's picture to move it. Dragging the main screen moves the whole scene, panels included.
+- **Scroll** over a screen to zoom its picture; **double-click** to put it back.
+- **Arrow keys** nudge the selected screen by 1 px (10 with Shift), **+** and **−** zoom, **Tab** picks the next screen, **0** resets it, **Esc** closes.
+- **Shows** picks the selected screen's role, **Autoscale** switches autoscaling for all screens.
+
+To open it from the keyboard, add a binding to `~/.config/hypr/bindings.lua`, for example:
+
+```lua
+o.bind("SUPER + CTRL + B", "Multimonitor background", "omarchy-shell shell toggle thepixelgardener.multimonitor-background")
+```
+
+## Autoscale
+
+Monitors of different sizes show the same number of logical pixels at different physical sizes: on a 32-inch 4K at scale 2 a pixel is 0.36 mm, on a 24-inch 1080p screen 0.28 mm, so a scene running across them would shrink by a quarter at the bezel. Autoscale reads each monitor's physical size from Hyprland and enlarges or shrinks the panels so the scene is as large on every screen as on the main one, keeping it aligned at the middle of each shared edge. It is on by default; switch it in the editor or with
+
+```bash
+omarchy-shell background setAutoscale off
+```
+
+A monitor that reports no physical size is left as it is.
 
 ## Settings
 
-Choose roles and move or scale the picture on any screen:
+Everything the editor does can also be done from a terminal:
 
 ```bash
+omarchy-shell background screens                    # every screen, its role, size and settings
 omarchy-shell background setScreen HDMI-A-1 role main
-omarchy-shell background setScreen DP-3 y -12        # move the picture 12 px up
-omarchy-shell background setScreen DP-3 x 8          # and 8 px right
-omarchy-shell background setScreen DP-3 scale 1.05   # zoom 5 % about the screen's centre
-omarchy-shell background setScreen DP-3 y auto       # remove one setting
-omarchy-shell background resetScreens                # back to automatic, no shifts
+omarchy-shell background setScreen DP-3 y -12       # move the picture 12 px up
+omarchy-shell background setScreen DP-3 x 8         # and 8 px right
+omarchy-shell background setScreen DP-3 scale 1.05  # zoom 5 % about the screen's centre
+omarchy-shell background setScreen DP-3 y auto      # remove one setting
+omarchy-shell background resetScreens               # back to automatic, no shifts
 ```
 
-`x` and `y` are in logical pixels of that screen. Use them to make a scene meet across bezels that are wider, or screens that sit higher, than Hyprland's layout says; `scale` evens out screens whose pixels are physically larger or smaller. Moving the main screen's picture moves the panels with it. A wallpaper or panel that only fills its screen is enlarged as needed, so a shift never shows an empty edge.
+`x` and `y` are in logical pixels of that screen; `scale` comes on top of autoscale. A wallpaper or panel that only fills its screen is enlarged as needed, so a shift never shows an empty edge.
 
 The settings live in `~/.config/omarchy/multimonitor-background.json` and apply as soon as the file is saved, so you can also edit it by hand:
 
 ```json
 {
+  "autoscale": true,
   "screens": {
     "HDMI-A-1": { "role": "main" },
     "DP-5": { "role": "left" },
@@ -105,6 +133,7 @@ This one, from Gargantuan, says the left panel is a portrait 1080 × 1920 whose 
 ## Troubleshooting
 
 ```bash
+omarchy-shell background spans       # the file each screen shows and where it sits
 omarchy-shell background spanState   # the full state of the service and every screen
 ```
 
@@ -113,7 +142,7 @@ If a screen stays black or shows the wrong picture, `omarchy restart shell` puts
 ## Limits
 
 - The panels are found by name, so a wallpaper and its panels must share the file extension.
-- Hyprland's layout is in logical pixels, and screens of different sizes and densities do not always meet where the layout says; that is what the `x`, `y` and `scale` settings are for.
+- Hyprland does not know how wide your bezels are or how the monitors stand on the desk; autoscale evens out pixel sizes, and the editor's drag and zoom do the rest.
 - The plugin is a copy of the background service from Omarchy 4.0. When Omarchy changes its own background service, the copy does not follow; if anything about wallpapers misbehaves after an Omarchy update, switch back to the built-in with the two commands above.
 - The lock screen still shows the wallpaper on every screen; it is drawn by Omarchy's lock, not by the background service.
 

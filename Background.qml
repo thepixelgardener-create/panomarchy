@@ -91,13 +91,18 @@ Item {
   readonly property string transitionCache: home + "/.cache/omarchy/background-transitions/"
 
   // ~/.config/omarchy/multimonitor-background.json, read live:
-  //   { "screens": { "<output>": { "role": "main|left|right|wallpaper",
+  //   { "autoscale": true,
+  //     "screens": { "<output>": { "role": "main|left|right|wallpaper",
   //                                "scale": 1.0, "x": 0, "y": 0 } } }
   // x and y move the picture on that screen, in logical pixels; scale zooms
-  // it about the screen's centre. Every key is optional.
+  // it about the screen's centre. Every key is optional. Autoscale, on
+  // unless set to false, sizes the panels so the scene is as large on
+  // every screen as on the main one, by each monitor's physical size.
   readonly property string configPath: home + "/.config/omarchy/multimonitor-background.json"
+  readonly property string pluginId: "thepixelgardener.multimonitor-background"
   property var config: ({ screens: {} })
   readonly property var roleNames: ["main", "left", "right", "wallpaper"]
+  readonly property bool autoscale: config.autoscale !== false
 
   function loadConfig(text) {
     var parsed = {}
@@ -126,15 +131,117 @@ Item {
     return roleNames.indexOf(role) !== -1 ? role : ""
   }
 
-  function saveScreenSetting(name, key, value) {
+  // Changes a setting at once, on screen. The file is written unless the
+  // caller is mid-drag and persists when the gesture ends.
+  function saveScreenSetting(name, key, value, deferWrite) {
+    var values = {}
+    values[key] = value
+    saveScreenSettings(name, values, deferWrite)
+  }
+
+  // Several settings of one screen at once; undefined removes a setting.
+  function saveScreenSettings(name, values, deferWrite) {
     var next = JSON.parse(JSON.stringify(config))
     var entry = next.screens[name] && typeof next.screens[name] === "object" ? next.screens[name] : {}
-    if (value === undefined) delete entry[key]
-    else entry[key] = value
+    for (var key in values) {
+      if (values[key] === undefined) delete entry[key]
+      else entry[key] = values[key]
+    }
     if (Object.keys(entry).length) next.screens[name] = entry
     else delete next.screens[name]
     config = next
-    configFile.setText(JSON.stringify(next, null, 2) + "\n")
+    if (!deferWrite) persistConfig()
+  }
+
+  function setAutoscale(enabled) {
+    var next = JSON.parse(JSON.stringify(config))
+    if (enabled) delete next.autoscale
+    else next.autoscale = false
+    config = next
+    persistConfig()
+  }
+
+  function resetScreenSettings(name) {
+    var next = JSON.parse(JSON.stringify(config))
+    if (name) delete next.screens[name]
+    else next.screens = {}
+    config = next
+    persistConfig()
+  }
+
+  function persistConfig() {
+    configFile.setText(JSON.stringify(config, null, 2) + "\n")
+  }
+
+  // Millimetres per logical pixel, by output name, from the physical size
+  // Hyprland reports for each monitor. Qt's own figure counts a rotated
+  // monitor's millimetres the wrong way round, so Hyprland's is used.
+  property var monitorMm: ({})
+
+  function loadMonitors(text) {
+    var monitors = []
+    try {
+      monitors = JSON.parse(String(text || "[]"))
+    } catch (e) {
+      return
+    }
+    var mm = ({})
+    for (var i = 0; i < monitors.length; i++) {
+      var m = monitors[i]
+      var rotated = Number(m.transform) % 2 === 1
+      var physicalWidth = Number(rotated ? m.physicalHeight : m.physicalWidth)
+      var logicalWidth = Number(rotated ? m.height : m.width) / (Number(m.scale) || 1)
+      if (physicalWidth > 0 && logicalWidth > 0) mm[m.name] = physicalWidth / logicalWidth
+    }
+    monitorMm = mm
+  }
+
+  function refreshMonitors() {
+    monitorRefresh.restart()
+  }
+
+  function mmPerPixel(screen) {
+    var mm = screen ? Number(monitorMm[screen.name]) : 0
+    return mm > 0 ? mm : 0
+  }
+
+  // How much larger a screen must draw the scene than its logical pixels say,
+  // so that it is as large on that screen as on the main one.
+  function autoScaleFor(screen) {
+    var main = mainScreen
+    if (!autoscale || !main || !screen || screen.name === main.name) return 1
+    var mainMm = mmPerPixel(main)
+    var screenMm = mmPerPixel(screen)
+    if (!(mainMm > 0 && screenMm > 0)) return 1
+    var factor = mainMm / screenMm
+    return factor > 0.25 && factor < 4 ? factor : 1
+  }
+
+  // A placed panel, autoscaled about the middle of the edge its screen
+  // shares with the main screen, so the scene still meets at that seam.
+  function autoscaled(rect, screen) {
+    var factor = autoScaleFor(screen)
+    var main = mainScreen
+    if (Math.abs(factor - 1) < 0.001 || !main) return rect
+    var ax = Math.max(0, Math.min(screen.width, main.x + main.width / 2 - screen.x))
+    var top = Math.max(screen.y, main.y)
+    var bottom = Math.min(screen.y + screen.height, main.y + main.height)
+    var ay = bottom > top ? (top + bottom) / 2 - screen.y
+                          : Math.max(0, Math.min(screen.height, main.y + main.height / 2 - screen.y))
+    return { x: ax + (rect.x - ax) * factor, y: ay + (rect.y - ay) * factor, w: rect.w * factor, h: rect.h * factor }
+  }
+
+  // What a screen shows now, for the editor.
+  function screenView(name) {
+    for (var panel of backgrounds.instances) {
+      if (panel.modelData.name === name) return panel.baseView
+    }
+    return null
+  }
+
+  function openEditor() {
+    if (root.shell && typeof root.shell.toggle === "function" && root.shell.toggle(pluginId, "{}")) return
+    Util.execArgv(["omarchy-shell", "shell", "toggle", pluginId, "{}"])
   }
 
   // Each screen's role, by output name.
@@ -621,6 +728,27 @@ Item {
     }
   }
 
+  Process {
+    id: monitorProbe
+    command: ["hyprctl", "monitors", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: root.loadMonitors(text)
+    }
+  }
+
+  // Monitors come and go, and change size and scale; read their sizes again.
+  Connections {
+    target: Quickshell
+    function onScreensChanged() { monitorRefresh.restart() }
+  }
+
+  Timer {
+    id: monitorRefresh
+    interval: 500
+    repeat: false
+    onTriggered: if (!monitorProbe.running) monitorProbe.running = true
+  }
+
   FileView {
     id: configFile
     path: root.configPath
@@ -699,15 +827,31 @@ Item {
 
     // omarchy-shell background screens: every screen, its position and its settings.
     function screens(): string {
-      var lines = ["settings: " + root.configPath]
+      var lines = ["settings: " + root.configPath + ", autoscale " + (root.autoscale ? "on" : "off")]
       for (var i = 0; i < Quickshell.screens.length; i++) {
         var s = Quickshell.screens[i]
         var settings = root.screenConfig(s.name)
+        var mm = root.mmPerPixel(s)
         lines.push(s.name + "\t" + root.screenRoles[s.name] + (root.configuredRole(s.name) ? " (set)" : " (auto)")
                    + "\t" + s.width + "x" + s.height + " at " + s.x + "," + s.y + " scale " + s.devicePixelRatio
+                   + "\t" + (mm > 0 ? mm.toFixed(4) + " mm/px" : "size unknown")
+                   + ", autoscale x" + root.autoScaleFor(s).toFixed(3)
                    + "\tsettings " + JSON.stringify(settings))
       }
       return lines.join("\n")
+    }
+
+    // omarchy-shell background setAutoscale <on|off>
+    function setAutoscale(value: string): string {
+      if (value !== "on" && value !== "off") return "use on or off"
+      root.setAutoscale(value === "on")
+      return "ok"
+    }
+
+    // omarchy-shell background editor: open or close the editor.
+    function editor(): string {
+      root.openEditor()
+      return "ok"
     }
 
     // omarchy-shell background setScreen <output> <role|scale|x|y> <value>;
@@ -799,7 +943,10 @@ Item {
     }
   }
 
-  Component.onCompleted: refreshBackground()
+  Component.onCompleted: {
+    refreshBackground()
+    monitorProbe.running = true
+  }
 
   Variants {
     id: backgrounds
@@ -850,8 +997,9 @@ Item {
             rect = root.placedPanel(path, layout, role, modelData)
             if (!rect && root.nativeSizes[path] === undefined) return null
             if (rect) {
-              rect = root.adjusted(rect, settings, width, height)
-              how = "aligned"
+              var factor = root.autoScaleFor(modelData)
+              rect = root.adjusted(root.autoscaled(rect, modelData), settings, width, height)
+              how = "aligned" + (Math.abs(factor - 1) >= 0.001 ? " autoscale x" + factor.toFixed(3) : "")
             }
           }
         }
@@ -902,15 +1050,18 @@ Item {
       // is decoded at its own size rather than scaled up to cover the screen.
       readonly property bool sized: width > 0 && height > 0
 
-      // A view's image is decoded at the size it is drawn, in physical pixels.
+      // A view's image is decoded at the size it is drawn, in physical pixels,
+      // rounded up to an eighth of the file's own size, so moving and
+      // zooming the picture in the editor does not decode it again each time.
       function decodeSize(view) {
         if (!sized || !view) return Qt.size(0, 0)
         var native = root.nativeSizes[view.file]
         if (native === undefined) return Qt.size(0, 0)
         var w = Math.ceil(view.w * screen.devicePixelRatio)
         var h = Math.ceil(view.h * screen.devicePixelRatio)
-        if (native.width > 0 && (native.width < w || native.height < h)) return Qt.size(native.width, native.height)
-        return Qt.size(w, h)
+        if (!(native.width > 0 && native.height > 0)) return Qt.size(w, h)
+        var level = Math.min(1, Math.ceil(Math.max(w / native.width, h / native.height) * 8) / 8)
+        return Qt.size(Math.round(native.width * level), Math.round(native.height * level))
       }
 
       function screenDecodeSize(view) {
@@ -1094,11 +1245,15 @@ Item {
   component DesktopClicks: MouseArea {
     required property var service
     anchors.fill: parent
-    acceptedButtons: Qt.LeftButton | Qt.RightButton
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
     onDoubleClicked: function(mouse) {
       if (mouse.button === Qt.RightButton) service.openThemeSwitcher()
-      else service.openSelector()
+      else if (mouse.button === Qt.LeftButton) service.openSelector()
       mouse.accepted = true
+    }
+    // A middle click on the desktop opens the multimonitor editor.
+    onClicked: function(mouse) {
+      if (mouse.button === Qt.MiddleButton) service.openEditor()
     }
   }
 }
