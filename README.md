@@ -15,7 +15,11 @@ omarchy plugin add https://github.com/thepixelgardener-create/omarchy-multimonit
 omarchy restart shell
 ```
 
-Enabling it switches Omarchy's built-in background off; the restart makes sure the shell runs the plugin's code fresh.
+Enabling it switches Omarchy's built-in background off; the restart makes sure the shell runs the plugin's code fresh. `--enable` also asks where the bar icon goes; to add or move it later:
+
+```bash
+omarchy bar put thepixelgardener.multimonitor-background --after omarchy.clock
+```
 
 To go back to the built-in background:
 
@@ -39,7 +43,7 @@ By default the **main** screen is the one with the most physical pixels (on a ti
 
 ## The editor
 
-Middle-click the desktop, or run
+Click the plugin's icon in the bar (three screens sharing one horizon), middle-click the desktop, or run
 
 ```bash
 omarchy-shell shell toggle thepixelgardener.multimonitor-background

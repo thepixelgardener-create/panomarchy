@@ -9,13 +9,22 @@
   "homepage": "https://github.com/thepixelgardener-create/omarchy-multimonitor-background",
   "kinds": [
     "service",
-    "panel"
+    "panel",
+    "bar-widget"
   ],
   "entryPoints": {
     "service": "Background.qml",
-    "panel": "Editor.qml"
+    "panel": "Editor.qml",
+    "barWidget": "BarWidget.qml"
   },
   "omarchy": {
     "clonedFrom": "omarchy.background"
+  },
+  "barWidget": {
+    "displayName": "Multimonitor Background",
+    "description": "Opens the editor: drag and zoom the background on every monitor.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }
