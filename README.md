@@ -1,6 +1,8 @@
-# Multimonitor Background
+# Panomarchy
 
-A background for [Omarchy](https://omarchy.org) on more than one monitor. Omarchy shows the same wallpaper on every screen; with this plugin a wallpaper can bring a left and a right panel, so one scene runs across three screens, past the bezels, or each side screen shows a picture of its own. Which screen shows what, and where the picture sits on each, follows your monitor layout and your settings.
+**One picture across all your monitors.**
+
+Panomarchy is a background for [Omarchy](https://omarchy.org) on more than one monitor. Omarchy shows the same wallpaper on every screen; with this plugin a wallpaper can bring a left and a right panel, so one scene runs across three screens, past the bezels, or each side screen shows a picture of its own. Which screen shows what, and where the picture sits on each, follows your monitor layout and your settings.
 
 ![A black hole's accretion disk running across a portrait screen, a 16:9 main screen and a third screen](preview.webp)
 
@@ -11,20 +13,20 @@ Wallpapers without panels, video wallpapers, transitions, intros and the backgro
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/thepixelgardener-create/omarchy-multimonitor-background.git --enable
+omarchy plugin add https://github.com/thepixelgardener-create/panomarchy.git --enable
 omarchy restart shell
 ```
 
 Enabling it switches Omarchy's built-in background off; the restart makes sure the shell runs the plugin's code fresh. `--enable` also asks where the bar icon goes; to add or move it later:
 
 ```bash
-omarchy bar put thepixelgardener.multimonitor-background --after omarchy.clock
+omarchy bar put thepixelgardener.panomarchy --after omarchy.clock
 ```
 
 To go back to the built-in background:
 
 ```bash
-omarchy plugin disable thepixelgardener.multimonitor-background
+omarchy plugin disable thepixelgardener.panomarchy
 omarchy plugin enable omarchy.background
 ```
 
@@ -46,7 +48,7 @@ By default the **main** screen is the one with the most physical pixels (on a ti
 Click the plugin's icon in the bar (three screens sharing one horizon), middle-click the desktop, or run
 
 ```bash
-omarchy-shell shell toggle thepixelgardener.multimonitor-background
+omarchy-shell shell toggle thepixelgardener.panomarchy
 ```
 
 The editor draws your monitors where Hyprland puts them, each with the picture it shows now, and the desktop behind follows every change as you make it. At the top right you choose what to adjust:
@@ -63,10 +65,12 @@ What you adjust has an orange box around it. Then:
 - Keys: **arrows** nudge by 1 px (10 with Shift), **+** and **−** zoom, **Tab** picks the next screen, **S** goes back to the whole scene, **0** resets, **Esc** closes.
 - **Autoscale** switches autoscaling for all screens; **Reset all** clears every setting.
 
+![The Panomarchy editor: three monitors laid out as Hyprland places them, the main screen's picture in an orange box with corner handles, and the settings beside them](editor.webp)
+
 To open it from the keyboard, add a binding to `~/.config/hypr/bindings.lua`, for example:
 
 ```lua
-o.bind("SUPER + CTRL + B", "Multimonitor background", "omarchy-shell shell toggle thepixelgardener.multimonitor-background")
+o.bind("SUPER + CTRL + B", "Panomarchy", "omarchy-shell shell toggle thepixelgardener.panomarchy")
 ```
 
 ## Autoscale
@@ -96,7 +100,7 @@ omarchy-shell background resetScreens               # back to automatic, no move
 
 `x` and `y` are in logical pixels. The scene is sized about the main screen's centre. A screen's own `scale` comes on top of autoscale and pivots on the seam it shares with the main screen, or on its centre if it shows a picture of its own. A picture that only fills its screen is enlarged as needed, so a move never shows an empty edge; elsewhere a gap shows a blurred copy of the picture.
 
-The settings live in `~/.config/omarchy/multimonitor-background.json` and apply as soon as the file is saved, so you can also edit it by hand:
+The settings live in `~/.config/omarchy/panomarchy.json` and apply as soon as the file is saved, so you can also edit it by hand:
 
 ```json
 {

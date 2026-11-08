@@ -90,7 +90,7 @@ Item {
   property var spanSources: ({})
   readonly property string transitionCache: home + "/.cache/omarchy/background-transitions/"
 
-  // ~/.config/omarchy/multimonitor-background.json, read live:
+  // ~/.config/omarchy/panomarchy.json, read live:
   //   { "autoscale": true,
   //     "screens": { "<output>": { "role": "main|left|right|wallpaper",
   //                                "scale": 1.0, "x": 0, "y": 0 } } }
@@ -98,8 +98,8 @@ Item {
   // it about the screen's centre. Every key is optional. Autoscale, on
   // unless set to false, sizes the panels so the scene is as large on
   // every screen as on the main one, by each monitor's physical size.
-  readonly property string configPath: home + "/.config/omarchy/multimonitor-background.json"
-  readonly property string pluginId: "thepixelgardener.multimonitor-background"
+  readonly property string configPath: home + "/.config/omarchy/panomarchy.json"
+  readonly property string pluginId: "thepixelgardener.panomarchy"
   property var config: ({ screens: {} })
   readonly property var roleNames: ["main", "left", "right", "wallpaper"]
   readonly property bool autoscale: config.autoscale !== false
@@ -112,7 +112,7 @@ Item {
         parsed = JSON.parse(text)
       } catch (e) {
         // A half-typed edit keeps the settings that were working.
-        console.warn("multimonitor-background: " + configPath + ": " + e)
+        console.warn("panomarchy: " + configPath + ": " + e)
         return
       }
     }
@@ -767,7 +767,7 @@ Item {
         try {
           parsed = JSON.parse(text)
         } catch (e) {
-          console.warn("multimonitor-background: layout for " + key + ": " + e)
+          console.warn("panomarchy: layout for " + key + ": " + e)
         }
       }
       var known = Object.assign({}, root.layouts)
@@ -1346,7 +1346,7 @@ Item {
       else if (mouse.button === Qt.LeftButton) service.openSelector()
       mouse.accepted = true
     }
-    // A middle click on the desktop opens the multimonitor editor.
+    // A middle click on the desktop opens the Panomarchy editor.
     onClicked: function(mouse) {
       if (mouse.button === Qt.MiddleButton) service.openEditor()
     }

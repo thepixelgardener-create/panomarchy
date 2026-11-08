@@ -5,7 +5,7 @@ import qs.Ui
 // The bar icon: opens and closes the editor.
 BarWidget {
   id: root
-  moduleName: "thepixelgardener.multimonitor-background"
+  moduleName: "thepixelgardener.panomarchy"
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -20,7 +20,7 @@ BarWidget {
     fontSize: Style.bar.iconFont
     fixedWidth: vertical ? -1 : Math.max(Style.bar.iconSlot, icon.width + Style.space(10))
     fixedHeight: vertical ? Style.bar.iconSlot : -1
-    tooltipText: "Multimonitor background"
+    tooltipText: "Panomarchy"
 
     SpanIcon {
       id: icon
@@ -33,7 +33,7 @@ BarWidget {
 
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton && root.bar)
-        root.bar.run("omarchy-shell shell toggle thepixelgardener.multimonitor-background '{}'")
+        root.bar.run("omarchy-shell shell toggle thepixelgardener.panomarchy '{}'")
     }
   }
 }

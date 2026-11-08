@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "id": "thepixelgardener.multimonitor-background",
-  "name": "Multimonitor Background",
+  "id": "thepixelgardener.panomarchy",
+  "name": "Panomarchy",
   "version": "1.0.0",
   "author": "frueh",
   "description": "Omarchy's background service, extended for several monitors: a wallpaper can bring a left and a right panel, so one scene runs across three screens or each side screen shows a picture of its own. An editor lets you drag and zoom the picture on every screen, and autoscale matches it to each monitor's physical size.",
   "license": "MIT",
-  "homepage": "https://github.com/thepixelgardener-create/omarchy-multimonitor-background",
+  "homepage": "https://github.com/thepixelgardener-create/panomarchy",
   "kinds": [
     "service",
     "panel",
@@ -21,7 +21,7 @@
     "clonedFrom": "omarchy.background"
   },
   "barWidget": {
-    "displayName": "Multimonitor Background",
+    "displayName": "Panomarchy",
     "description": "Opens the editor: drag and zoom the background on every monitor.",
     "category": "System",
     "allowMultiple": false,

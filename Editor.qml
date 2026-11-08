@@ -5,7 +5,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// The multimonitor editor: every monitor where Hyprland puts it, each showing
+// The Panomarchy editor: every monitor where Hyprland puts it, each showing
 // the picture it has now, and a box around what is being adjusted:
 //
 //   Whole scene  the picture across all screens; the side screens follow
@@ -20,7 +20,7 @@ import qs.Ui
 // gesture ends.
 //
 // Open it from the bar icon, with a middle click on the desktop, or with
-// omarchy-shell shell toggle thepixelgardener.multimonitor-background
+// omarchy-shell shell toggle thepixelgardener.panomarchy
 Item {
   id: root
 
@@ -36,7 +36,7 @@ Item {
   property bool dirty: false
   property bool gesturing: false
 
-  readonly property string pluginId: "thepixelgardener.multimonitor-background"
+  readonly property string pluginId: "thepixelgardener.panomarchy"
   readonly property string mainName: service && service.mainScreen ? service.mainScreen.name : ""
   readonly property color accent: Commons.Color.accent
   readonly property color fg: Commons.Color.foreground
@@ -181,7 +181,7 @@ Item {
   OverlayWindow {
     id: window
     shown: root.opened
-    WlrLayershell.namespace: "multimonitor-background-editor"
+    WlrLayershell.namespace: "panomarchy-editor"
 
     onShownChanged: if (shown) Qt.callLater(function() { keys.forceActiveFocus() })
 
@@ -232,7 +232,7 @@ Item {
         Text {
           id: title
           anchors { left: parent.left; top: parent.top; leftMargin: Style.space(24); topMargin: Style.space(20) }
-          text: "Multimonitor Background"
+          text: "Panomarchy"
           color: root.fg
           font.family: Style.font.family
           font.pixelSize: Style.font.body * 1.35
