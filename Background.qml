@@ -147,8 +147,18 @@ Item {
     requestNativeSize(spanPanelPath(path, "right"))
   }
 
+  // A file replaced at the same path, as when a theme is updated or panels
+  // are rebuilt, must not be served from Qt's image cache, which keys on the
+  // URL. The URL therefore carries the file's modification time, read along
+  // with its size.
+  function fileStamp(path) {
+    var native = nativeSizes[path]
+    return native && native.stamp ? native.stamp : 0
+  }
+
   function imageUrl(path) {
-    return Util.fileUrl(path)
+    var stamp = fileStamp(path)
+    return Util.fileUrl(path) + (stamp ? "?v=" + stamp : "")
   }
 
   function refreshBackground() {
@@ -328,7 +338,7 @@ Item {
   function probeNextSize() {
     if (sizeProbe.running || sizeQueue.length === 0) return
     sizeProbe.path = sizeQueue[0]
-    sizeProbe.command = ["magick", "identify", "-ping", "-format", "%w %h", sizeProbe.path]
+    sizeProbe.command = ["bash", "-c", 'magick identify -ping -format "%w %h" "$1" && stat -Lc " %Y" "$1"', "probe", sizeProbe.path]
     sizeProbe.running = true
   }
 
@@ -379,9 +389,11 @@ Item {
       var parts = String(sizeProbeOut.text || "").trim().split(/\s+/)
       var width = exitCode === 0 ? parseInt(parts[0], 10) : 0
       var height = exitCode === 0 ? parseInt(parts[1], 10) : 0
+      // Kept to nine digits so it fits the int version BackgroundMedia takes.
+      var stamp = exitCode === 0 ? (parseInt(parts[2], 10) || 0) % 1000000000 : 0
       var known = Object.assign({}, root.nativeSizes)
       // An unreadable header records 0x0, which decodes at screen size.
-      known[path] = { width: width > 0 ? width : 0, height: height > 0 ? height : 0 }
+      known[path] = { width: width > 0 ? width : 0, height: height > 0 ? height : 0, stamp: stamp }
       root.nativeSizes = known
       root.sizeQueue = root.sizeQueue.filter(function(queued) { return queued !== sizeProbe.path })
       root.probeNextSize()
@@ -601,7 +613,7 @@ Item {
         id: base
         anchors.fill: parent
         path: panel.pathFor(root.displayedBackground)
-        version: root.reloadVersion
+        version: root.reloadVersion + root.fileStamp(path)
         cached: true
         constrainDecode: true
         decodeSize: panel.decodeSize(path)
